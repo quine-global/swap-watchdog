@@ -35,6 +35,7 @@ jobs:
 
       - uses: https://forge.in.quineglobal.com/quine-global/app-build@v1
         with:
+          owner: quine-global
           name: swap-watchdog
           kind: go
           archs: ${{ matrix.arch }}
