@@ -33,6 +33,36 @@ a real Firefox flatpak process ran away to 3.3GB RSS + 5.8GB swap, swap hit
   does but without pinning it on top. If it isn't running, it starts
   `force-quit-gui.service` and shows the window once it's up.
 
+## Styling
+
+The Force Quit Monitor reads CSS, GTK3's flavour of it
+([overview](https://docs.gtk.org/gtk3/css-overview.html),
+[properties](https://docs.gtk.org/gtk3/css-properties.html)), from
+`~/.config/force-quit-monitor/style.css` (`$XDG_CONFIG_HOME`), on top of
+`/etc/force-quit-monitor/style.css` (system-wide) and its own defaults; a
+later one wins. Saving the file restyles the window within 2 seconds, no
+restart; a file that doesn't parse says so at the top of the window.
+
+| Selector | What |
+|---|---|
+| `window#force-quit-monitor` | the window; `.alarm` while swap is full or memory pressure is high |
+| `#headline` | "Force Quit Monitor", or the warning (`#headline.alarm`, red by default) |
+| `#accounting` | the swap and RAM line |
+| `#hint` | the line above the list |
+| `#processes` | the process list (a `treeview`: `#processes:selected` is the selected row, `#processes header button` the column titles) |
+| `#status` | what the last force quit did |
+| `button#force-quit` | the Force Quit Selected button |
+| `#style-error` | the stylesheet error line |
+
+```css
+window#force-quit-monitor { background-color: #1e1e2e; }
+#headline { color: #f5c2e7; font-size: 20px; }
+#processes { font-family: monospace; }
+button#force-quit { background-image: none; background-color: #f38ba8; color: #11111b; }
+```
+
+GTK's general `~/.config/gtk-3.0/gtk.css` applies too, to every GTK3 app.
+
 ## The cold-start problem, and how this avoids it
 
 The whole point is to still work when the system is least able to do

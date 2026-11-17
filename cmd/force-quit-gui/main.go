@@ -151,20 +151,35 @@ func memoryPressureFull() float64 {
 	return -1
 }
 
-// headlineMarkup says what's actually wrong, or nothing alarming when
-// nothing is: the window is also on screen at times swap is fine (opened
-// by hand, or at login before it minimizes).
-func headlineMarkup(m memStatus, psiFull float64) string {
+// headline says what's actually wrong, or nothing alarming when nothing
+// is: the window is also on screen at times swap is fine (opened by hand,
+// or at login before it minimizes). alarm puts the "alarm" style class on
+// the headline and the window, which the default style shows in red
+// (style.go).
+func headline(m memStatus, psiFull float64) (text string, alarm bool) {
 	if m.swapTotalKB > 0 {
 		freePct := float64(m.swapTotalKB-m.swapUsedKB) / float64(m.swapTotalKB) * 100
 		if freePct < swapFullFreePct {
-			return `<span foreground="red" weight="bold" size="x-large">⚠ SWAP IS FULL</span>`
+			return "⚠ SWAP IS FULL", true
 		}
 	}
 	if psiFull > pressureHighPSI {
-		return `<span foreground="red" weight="bold" size="x-large">⚠ MEMORY PRESSURE IS HIGH</span>`
+		return "⚠ MEMORY PRESSURE IS HIGH", true
 	}
-	return `<span weight="bold" size="large">Force Quit Monitor</span>`
+	return "Force Quit Monitor", false
+}
+
+// setClass adds or removes a style class on w.
+func setClass(w gtk.IWidget, class string, on bool) {
+	ctx, err := w.ToWidget().GetStyleContext()
+	if err != nil {
+		return
+	}
+	if on {
+		ctx.AddClass(class)
+	} else {
+		ctx.RemoveClass(class)
+	}
 }
 
 func gb(kb int64) float64 {
@@ -192,6 +207,8 @@ func main() {
 	}
 	win.SetTitle("Force Quit Monitor")
 	win.SetDefaultSize(700, 450)
+	win.SetName("force-quit-monitor")
+	reloadStyles := setupStyles()
 
 	// Closing the window just hides it — this process must keep running so
 	// the watchdog can reveal it again later without spawning anything new.
@@ -204,16 +221,26 @@ func main() {
 	box.SetBorderWidth(8)
 	win.Add(box)
 
+	// A stylesheet that doesn't parse says so here (hidden otherwise).
+	styleErrorLabel, _ := gtk.LabelNew("")
+	styleErrorLabel.SetName("style-error")
+	styleErrorLabel.SetHAlign(gtk.ALIGN_START)
+	styleErrorLabel.SetLineWrap(true)
+	styleErrorLabel.SetNoShowAll(true)
+	box.PackStart(styleErrorLabel, false, false, 0)
+
 	warningLabel, _ := gtk.LabelNew("")
-	warningLabel.SetMarkup(headlineMarkup(readMemStatus(), memoryPressureFull()))
+	warningLabel.SetName("headline")
 	warningLabel.SetHAlign(gtk.ALIGN_START)
 	box.PackStart(warningLabel, false, false, 0)
 
 	accountingLabel, _ := gtk.LabelNew(accountingText(readMemStatus()))
+	accountingLabel.SetName("accounting")
 	accountingLabel.SetHAlign(gtk.ALIGN_START)
 	box.PackStart(accountingLabel, false, false, 0)
 
 	label, _ := gtk.LabelNew("Sorted by memory + swap used, highest first. Select a process and force quit it.")
+	label.SetName("hint")
 	label.SetHAlign(gtk.ALIGN_START)
 	box.PackStart(label, false, false, 0)
 
@@ -221,6 +248,7 @@ func main() {
 	store, _ := gtk.ListStoreNew(glib.TYPE_INT, glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING)
 
 	treeView, _ := gtk.TreeViewNewWithModel(store)
+	treeView.SetName("processes")
 	addColumn := func(title string, idx int) {
 		renderer, _ := gtk.CellRendererTextNew()
 		col, _ := gtk.TreeViewColumnNewWithAttribute(title, renderer, "text", idx)
@@ -239,10 +267,12 @@ func main() {
 	box.PackStart(scrolled, true, true, 0)
 
 	statusLabel, _ := gtk.LabelNew("")
+	statusLabel.SetName("status")
 	statusLabel.SetHAlign(gtk.ALIGN_START)
 	box.PackStart(statusLabel, false, false, 0)
 
 	killButton, _ := gtk.ButtonNewWithLabel("Force Quit Selected")
+	killButton.SetName("force-quit")
 	box.PackStart(killButton, false, false, 0)
 
 	// selectedPID reads the PID column of the current selection, if any.
@@ -273,8 +303,17 @@ func main() {
 	}
 
 	refresh := func() {
+		if problems := reloadStyles(); len(problems) > 0 {
+			styleErrorLabel.SetText("Style: " + strings.Join(problems, "; "))
+			styleErrorLabel.Show()
+		} else {
+			styleErrorLabel.Hide()
+		}
 		mem := readMemStatus()
-		warningLabel.SetMarkup(headlineMarkup(mem, memoryPressureFull()))
+		text, alarm := headline(mem, memoryPressureFull())
+		warningLabel.SetText(text)
+		setClass(warningLabel, "alarm", alarm)
+		setClass(win, "alarm", alarm)
 		accountingLabel.SetText(accountingText(mem))
 
 		prevPID, hadSelection := selectedPID()
