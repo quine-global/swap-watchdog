@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Force Quit Monitor
+GenericName=Force Quit
+Comment=See what's using memory and swap, and force-quit it
+# The monitor runs minimized from login (force-quit-gui.service); this shows
+# that window rather than starting a second one.
+Exec=swap-watchdog --reveal
+Icon=process-stop
+Terminal=false
+Categories=Utility;
+Keywords=kill;force;quit;memory;swap;process;task;hung;frozen;
+StartupNotify=false

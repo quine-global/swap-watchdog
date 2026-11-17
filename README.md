@@ -27,6 +27,12 @@ a real Firefox flatpak process ran away to 3.3GB RSS + 5.8GB swap, swap hit
   (`SIGKILL`s the selected PID directly — no `pkexec`, since it only needs
   to kill the current user's own processes).
 
+- **In the start menu:** *Utilities → Force Quit Monitor*
+  (`desktop/force-quit-monitor.desktop`) runs `swap-watchdog --reveal`,
+  which shows the window that's already running, the same way the watchdog
+  does but without pinning it on top. If it isn't running, it starts
+  `force-quit-gui.service` and shows the window once it's up.
+
 ## The cold-start problem, and how this avoids it
 
 The whole point is to still work when the system is least able to do

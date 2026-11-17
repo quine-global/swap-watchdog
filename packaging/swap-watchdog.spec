@@ -31,6 +31,7 @@ for u in swap-watchdog force-quit-gui; do
       %{srcdir}/systemd/$u.service > %{buildroot}%{_userunitdir}/$u.service
   grep -q "^ExecStart=%{_bindir}/$u$" %{buildroot}%{_userunitdir}/$u.service
 done
+install -D -m 0644 %{srcdir}/desktop/force-quit-monitor.desktop %{buildroot}%{_datadir}/applications/force-quit-monitor.desktop
 install -D -m 0644 /dev/stdin %{buildroot}%{_userpresetdir}/80-swap-watchdog.preset <<'PRESET'
 enable force-quit-gui.service
 enable swap-watchdog.service
@@ -50,3 +51,4 @@ PRESET
 %{_userunitdir}/swap-watchdog.service
 %{_userunitdir}/force-quit-gui.service
 %{_userpresetdir}/80-swap-watchdog.preset
+%{_datadir}/applications/force-quit-monitor.desktop
