@@ -244,22 +244,40 @@ func main() {
 	label.SetHAlign(gtk.ALIGN_START)
 	box.PackStart(label, false, false, 0)
 
-	// Columns: PID, Name, RSS (MB), Swap (MB), Total (MB)
-	store, _ := gtk.ListStoreNew(glib.TYPE_INT, glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING)
+	// Columns: PID, Name, RSS (MB), Swap (MB), Total (MB) as shown, then
+	// RSS, swap and total in KB, hidden, which the MB columns sort by (as
+	// text, "100.0" came before "20.0").
+	const (
+		colPID = iota
+		colName
+		colRSS
+		colSwap
+		colTotal
+		colRSSKB
+		colSwapKB
+		colTotalKB
+	)
+	store, _ := gtk.ListStoreNew(
+		glib.TYPE_INT, glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING, glib.TYPE_STRING,
+		glib.TYPE_INT64, glib.TYPE_INT64, glib.TYPE_INT64,
+	)
+	// Highest memory + swap first, kept so by the store as rows change, until
+	// a column header is clicked.
+	store.SetSortColumnId(colTotalKB, gtk.SORT_DESCENDING)
 
 	treeView, _ := gtk.TreeViewNewWithModel(store)
 	treeView.SetName("processes")
-	addColumn := func(title string, idx int) {
+	addColumn := func(title string, idx, sortIdx int) {
 		renderer, _ := gtk.CellRendererTextNew()
 		col, _ := gtk.TreeViewColumnNewWithAttribute(title, renderer, "text", idx)
-		col.SetSortColumnID(idx)
+		col.SetSortColumnID(sortIdx)
 		treeView.AppendColumn(col)
 	}
-	addColumn("PID", 0)
-	addColumn("Name", 1)
-	addColumn("RSS (MB)", 2)
-	addColumn("Swap (MB)", 3)
-	addColumn("Total (MB)", 4)
+	addColumn("PID", colPID, colPID)
+	addColumn("Name", colName, colName)
+	addColumn("RSS (MB)", colRSS, colRSSKB)
+	addColumn("Swap (MB)", colSwap, colSwapKB)
+	addColumn("Total (MB)", colTotal, colTotalKB)
 
 	scrolled, _ := gtk.ScrolledWindowNew(nil, nil)
 	scrolled.SetPolicy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
@@ -276,11 +294,6 @@ func main() {
 	box.PackStart(killButton, false, false, 0)
 
 	// selectedPID reads the PID column of the current selection, if any.
-	// Used both to act on the selected row and, in refresh, to find the
-	// matching row again after the store is rebuilt — GtkTreeSelection
-	// tracks a TreeIter, which store.Clear() invalidates, so without this
-	// every refresh would silently drop the highlight even though nothing
-	// the user cares about changed.
 	selectedPID := func() (int, bool) {
 		sel, err := treeView.GetSelection()
 		if err != nil {
@@ -302,6 +315,9 @@ func main() {
 		return pid, ok
 	}
 
+	// The row of each process listed, by PID.
+	rows := make(map[int]*gtk.TreeIter)
+
 	refresh := func() {
 		if problems := reloadStyles(); len(problems) > 0 {
 			styleErrorLabel.SetText("Style: " + strings.Join(problems, "; "))
@@ -316,42 +332,40 @@ func main() {
 		setClass(win, "alarm", alarm)
 		accountingLabel.SetText(accountingText(mem))
 
-		prevPID, hadSelection := selectedPID()
-		vadj := scrolled.GetVAdjustment()
-		scrollPos := vadj.GetValue()
-
-		store.Clear()
-		var reselect *gtk.TreeIter
+		// Each process keeps its row, updated in place: added when it
+		// appears, removed when it's gone. The list used to be cleared and
+		// refilled, which threw the scrollbar back to the top for a frame on
+		// every refresh (and the selection had to be found again); a row
+		// that stays put keeps both. GtkListStore's iters last as long as
+		// their row.
+		seen := make(map[int]bool)
 		for _, p := range readProcesses() {
-			iter := store.Append()
+			seen[p.pid] = true
+			iter, ok := rows[p.pid]
+			if !ok {
+				iter = store.Append()
+				rows[p.pid] = iter
+			}
 			store.Set(iter,
-				[]int{0, 1, 2, 3, 4},
+				[]int{colPID, colName, colRSS, colSwap, colTotal, colRSSKB, colSwapKB, colTotalKB},
 				[]interface{}{
 					p.pid,
 					p.name,
 					fmt.Sprintf("%.1f", float64(p.rssKB)/1024),
 					fmt.Sprintf("%.1f", float64(p.swapKB)/1024),
 					fmt.Sprintf("%.1f", float64(p.totalKB)/1024),
+					p.rssKB,
+					p.swapKB,
+					p.totalKB,
 				},
 			)
-			if hadSelection && p.pid == prevPID {
-				reselect = iter
+		}
+		for pid, iter := range rows {
+			if !seen[pid] {
+				store.Remove(iter)
+				delete(rows, pid)
 			}
 		}
-		if reselect != nil {
-			if sel, err := treeView.GetSelection(); err == nil {
-				sel.SelectIter(reselect)
-			}
-		}
-
-		// store.Clear() resets the scrollbar to the top immediately, but
-		// GTK doesn't recompute the adjustment's new upper bound until its
-		// next layout pass — setting the value back right here would just
-		// get clamped against the stale (just-emptied) bound. Deferring to
-		// an idle callback runs this after that layout pass instead.
-		glib.IdleAdd(func() {
-			vadj.SetValue(scrollPos)
-		})
 	}
 	refresh()
 
